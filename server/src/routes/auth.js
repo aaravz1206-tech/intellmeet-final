@@ -1,0 +1,295 @@
+import express from 'express';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import User from '../models/User.js';
+import { protect } from '../middleware/auth.js';
+import { validate as validateEmail } from 'deep-email-validator';
+import { OAuth2Client } from 'google-auth-library';
+
+const router = express.Router();
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+const generateToken = (id) => {
+  if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
+    throw new Error('FATAL: JWT_SECRET environment variable is strictly required in production.');
+  }
+  return jwt.sign(
+    { id }, 
+    process.env.JWT_SECRET || 'dev_local_secret', 
+    { expiresIn: '30d' }
+  );
+};
+
+// @desc    Register a new user
+// @route   POST /api/auth/register
+// @access  Public
+router.post('/register', async (req, res) => {
+  const { name, email, password, avatar } = req.body;
+
+  try {
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: 'Please enter all fields' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    
+    // Validate email existence
+    const { valid, reason, validators } = await validateEmail({
+      email: cleanEmail,
+      validateRegex: true,
+      validateMx: true,
+      validateTypo: true,
+      validateDisposable: true,
+      validateSMTP: true,
+    });
+    if (!valid) {
+      return res.status(400).json({ message: `Invalid email address. Reason: ${validators[reason]?.reason || reason}` });
+    }
+
+    // Check if user exists
+    let existingUser = null;
+    if (global.isMockDB) {
+      existingUser = global.mockDb.users.find(u => u.email === cleanEmail);
+    } else {
+      existingUser = await User.findOne({ email: cleanEmail });
+    }
+
+    if (existingUser) {
+      return res.status(400).json({ message: 'User already exists' });
+    }
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(password, salt);
+
+    const defaultAvatar = avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`;
+
+    let newUser = null;
+    if (global.isMockDB) {
+      newUser = {
+        _id: new Date().getTime().toString(), // Simple string ID
+        name,
+        email: cleanEmail,
+        passwordHash,
+        avatar: defaultAvatar,
+        role: 'Member',
+        createdAt: new Date()
+      };
+      global.mockDb.users.push(newUser);
+    } else {
+      newUser = await User.create({
+        name,
+        email: cleanEmail,
+        passwordHash,
+        avatar: defaultAvatar,
+        role: 'Member'
+      });
+    }
+
+    res.status(201).json({
+      _id: newUser._id,
+      name: newUser.name,
+      email: newUser.email,
+      avatar: newUser.avatar,
+      role: newUser.role,
+      token: generateToken(newUser._id)
+    });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ message: 'Server error during registration' });
+  }
+});
+
+// @desc    Authenticate user & get token
+// @route   POST /api/auth/login
+// @access  Public
+router.post('/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Please enter all fields' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    let user = null;
+
+    if (global.isMockDB) {
+      user = global.mockDb.users.find(u => u.email === cleanEmail);
+    } else {
+      user = await User.findOne({ email: cleanEmail });
+    }
+
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
+
+    // If the user signed up via Google and has no password, deny local login
+    if (user.authProvider === 'google' && !user.passwordHash) {
+      return res.status(400).json({ message: 'Please log in with Google.' });
+    }
+
+    // Match password
+    const isMatch = await bcrypt.compare(password, user.passwordHash);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
+
+    res.json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      avatar: user.avatar,
+      role: user.role,
+      token: generateToken(user._id)
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ message: 'Server error during login' });
+  }
+});
+
+// @desc    Authenticate with Google OAuth
+// @route   POST /api/auth/google
+// @access  Public
+router.post('/google', async (req, res) => {
+  const { credential } = req.body;
+
+  try {
+    if (!credential) {
+      return res.status(400).json({ message: 'No Google credential provided' });
+    }
+
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    const { email, name, picture, sub: googleId } = payload;
+    const cleanEmail = email.toLowerCase().trim();
+
+    let user = null;
+
+    if (global.isMockDB) {
+      user = global.mockDb.users.find(u => u.email === cleanEmail);
+      if (!user) {
+        user = {
+          _id: new Date().getTime().toString(),
+          name,
+          email: cleanEmail,
+          googleId,
+          authProvider: 'google',
+          avatar: picture || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`,
+          role: 'Member',
+          createdAt: new Date()
+        };
+        global.mockDb.users.push(user);
+      }
+    } else {
+      user = await User.findOne({ email: cleanEmail });
+      if (!user) {
+        user = await User.create({
+          name,
+          email: cleanEmail,
+          googleId,
+          authProvider: 'google',
+          avatar: picture || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`,
+          role: 'Member'
+        });
+      } else if (!user.googleId) {
+        // Link Google ID to existing account
+        user.googleId = googleId;
+        user.authProvider = 'google';
+        if (!user.avatar || user.avatar.includes('dicebear')) {
+          user.avatar = picture;
+        }
+        await user.save();
+      }
+    }
+
+    res.json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      avatar: user.avatar,
+      role: user.role,
+      token: generateToken(user._id)
+    });
+  } catch (error) {
+    console.error('Google Auth error:', error);
+    res.status(500).json({ message: 'Failed to authenticate with Google' });
+  }
+});
+
+// @desc    Get user profile
+// @route   GET /api/auth/me
+// @access  Private
+router.get('/me', protect, async (req, res) => {
+  res.json(req.user);
+});
+
+// @desc    Update user profile / avatar
+// @route   PUT /api/auth/profile
+// @access  Private
+router.put('/profile', protect, async (req, res) => {
+  const { name, avatar } = req.body;
+
+  try {
+    let updatedUser = null;
+    const userIdStr = req.user._id.toString();
+
+    if (global.isMockDB) {
+      const idx = global.mockDb.users.findIndex(u => u._id.toString() === userIdStr);
+      if (idx !== -1) {
+        if (name) global.mockDb.users[idx].name = name;
+        if (avatar) global.mockDb.users[idx].avatar = avatar;
+        updatedUser = global.mockDb.users[idx];
+      }
+    } else {
+      const user = await User.findById(req.user._id);
+      if (user) {
+        if (name) user.name = name;
+        if (avatar) user.avatar = avatar;
+        updatedUser = await user.save();
+      }
+    }
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json({
+      _id: updatedUser._id,
+      name: updatedUser.name,
+      email: updatedUser.email,
+      avatar: updatedUser.avatar,
+      role: updatedUser.role
+    });
+  } catch (error) {
+    console.error('Profile update error:', error);
+    res.status(500).json({ message: 'Server error during profile update' });
+  }
+});
+
+// @desc    Get total count of registered users
+// @route   GET /api/auth/users/count
+// @access  Private
+router.get('/users/count', protect, async (req, res) => {
+  try {
+    let count = 0;
+    if (global.isMockDB) {
+      count = global.mockDb.users.length;
+    } else {
+      count = await User.countDocuments({});
+    }
+    // Return count. Let's make sure it is at least 1 (the current user).
+    res.json({ count: count || 1 });
+  } catch (error) {
+    console.error('Count users error:', error);
+    res.status(500).json({ message: 'Server error retrieving user count' });
+  }
+});
+
+export default router;
