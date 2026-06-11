@@ -2,13 +2,13 @@ import express from 'express';
 import { protect } from '../middleware/auth.js';
 import Meeting from '../models/Meeting.js';
 import Task from '../models/Task.js';
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const router = express.Router();
 
-let openai = null;
-if (process.env.OPENAI_API_KEY) {
-  openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let genAI = null;
+if (process.env.GEMINI_API_KEY) {
+  genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 }
 
 // @desc    Translate text
@@ -22,19 +22,16 @@ router.post('/translate', protect, async (req, res) => {
       return res.status(400).json({ message: 'Text and target language are required' });
     }
 
-    if (!openai) {
-      return res.status(500).json({ message: 'OpenAI API key is not configured.' });
+    if (!genAI) {
+      return res.status(500).json({ message: 'Gemini API key is not configured.' });
     }
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [
-        { role: "system", content: `You are a professional translator. Translate the following text into ${targetLang}. Only return the translated text.` },
-        { role: "user", content: text }
-      ]
-    });
-
-    res.json({ translatedText: completion.choices[0].message.content.trim() });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const prompt = `You are a professional translator. Translate the following text into ${targetLang}. Only return the translated text without any quotes or extra explanation.\n\nText to translate:\n${text}`;
+    
+    const result = await model.generateContent(prompt);
+    
+    res.json({ translatedText: result.response.text().trim() });
   } catch (error) {
     console.error('AI Translation error:', error);
     res.status(500).json({ message: 'AI Translation error' });
@@ -63,8 +60,8 @@ router.post('/summarize', protect, async (req, res) => {
       return res.status(404).json({ message: 'Meeting not found' });
     }
 
-    if (!openai) {
-      return res.status(500).json({ message: 'OpenAI API key is not configured.' });
+    if (!genAI) {
+      return res.status(500).json({ message: 'Gemini API key is not configured.' });
     }
 
     const transcriptText = meeting.transcript.map(line => `${line.userName}: ${line.text}`).join('\n');
@@ -93,16 +90,14 @@ router.post('/summarize', protect, async (req, res) => {
       }
     `;
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [
-        { role: "system", content: "You are an AI meeting assistant. Always output valid JSON." },
-        { role: "user", content: prompt }
-      ],
-      response_format: { type: "json_object" }
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-1.5-flash",
+      generationConfig: { responseMimeType: "application/json" },
+      systemInstruction: "You are an AI meeting assistant. Always output valid JSON."
     });
 
-    const parsedResponse = JSON.parse(completion.choices[0].message.content);
+    const result = await model.generateContent(prompt);
+    const parsedResponse = JSON.parse(result.response.text());
     
     // Map extracted actions to proper format with dates
     const extractedActions = (parsedResponse.actionItems || []).map(action => ({
@@ -187,8 +182,8 @@ router.post('/chat', protect, async (req, res) => {
       return res.status(400).json({ message: 'Message is required' });
     }
 
-    if (!openai) {
-      return res.status(500).json({ message: 'OpenAI API key is not configured.' });
+    if (!genAI) {
+      return res.status(500).json({ message: 'Gemini API key is not configured.' });
     }
 
     // Prepare context
@@ -208,15 +203,14 @@ router.post('/chat', protect, async (req, res) => {
       }
     }
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [
-        { role: "system", content: context },
-        { role: "user", content: message }
-      ]
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-1.5-flash",
+      systemInstruction: context
     });
 
-    res.json({ response: completion.choices[0].message.content });
+    const result = await model.generateContent(message);
+
+    res.json({ response: result.response.text() });
   } catch (error) {
     console.error('AI Chat Error:', error);
     res.status(500).json({ message: 'Server error in AI Chat agent' });

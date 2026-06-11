@@ -60,7 +60,7 @@ app.use('/api/friends', friendsRoutes);
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'healthy',
-    mode: global.isMockDB ? 'Memory (Mock DB)' : 'Mongoose (Production DB)',
+    mode: 'Mongoose (Production DB)',
     timestamp: new Date()
   });
 });

@@ -48,12 +48,7 @@ router.post('/register', async (req, res) => {
     }
 
     // Check if user exists
-    let existingUser = null;
-    if (global.isMockDB) {
-      existingUser = global.mockDb.users.find(u => u.email === cleanEmail);
-    } else {
-      existingUser = await User.findOne({ email: cleanEmail });
-    }
+    let existingUser = await User.findOne({ email: cleanEmail });
 
     if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
@@ -65,27 +60,13 @@ router.post('/register', async (req, res) => {
 
     const defaultAvatar = avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`;
 
-    let newUser = null;
-    if (global.isMockDB) {
-      newUser = {
-        _id: new Date().getTime().toString(), // Simple string ID
-        name,
-        email: cleanEmail,
-        passwordHash,
-        avatar: defaultAvatar,
-        role: 'Member',
-        createdAt: new Date()
-      };
-      global.mockDb.users.push(newUser);
-    } else {
-      newUser = await User.create({
-        name,
-        email: cleanEmail,
-        passwordHash,
-        avatar: defaultAvatar,
-        role: 'Member'
-      });
-    }
+    const newUser = await User.create({
+      name,
+      email: cleanEmail,
+      passwordHash,
+      avatar: defaultAvatar,
+      role: 'Member'
+    });
 
     res.status(201).json({
       _id: newUser._id,
@@ -113,13 +94,7 @@ router.post('/login', async (req, res) => {
     }
 
     const cleanEmail = email.toLowerCase().trim();
-    let user = null;
-
-    if (global.isMockDB) {
-      user = global.mockDb.users.find(u => u.email === cleanEmail);
-    } else {
-      user = await User.findOne({ email: cleanEmail });
-    }
+    const user = await User.findOne({ email: cleanEmail });
 
     if (!user) {
       return res.status(400).json({ message: 'Invalid credentials' });
@@ -170,43 +145,24 @@ router.post('/google', async (req, res) => {
     const { email, name, picture, sub: googleId } = payload;
     const cleanEmail = email.toLowerCase().trim();
 
-    let user = null;
-
-    if (global.isMockDB) {
-      user = global.mockDb.users.find(u => u.email === cleanEmail);
-      if (!user) {
-        user = {
-          _id: new Date().getTime().toString(),
-          name,
-          email: cleanEmail,
-          googleId,
-          authProvider: 'google',
-          avatar: picture || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`,
-          role: 'Member',
-          createdAt: new Date()
-        };
-        global.mockDb.users.push(user);
+    let user = await User.findOne({ email: cleanEmail });
+    if (!user) {
+      user = await User.create({
+        name,
+        email: cleanEmail,
+        googleId,
+        authProvider: 'google',
+        avatar: picture || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`,
+        role: 'Member'
+      });
+    } else if (!user.googleId) {
+      // Link Google ID to existing account
+      user.googleId = googleId;
+      user.authProvider = 'google';
+      if (!user.avatar || user.avatar.includes('dicebear')) {
+        user.avatar = picture;
       }
-    } else {
-      user = await User.findOne({ email: cleanEmail });
-      if (!user) {
-        user = await User.create({
-          name,
-          email: cleanEmail,
-          googleId,
-          authProvider: 'google',
-          avatar: picture || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`,
-          role: 'Member'
-        });
-      } else if (!user.googleId) {
-        // Link Google ID to existing account
-        user.googleId = googleId;
-        user.authProvider = 'google';
-        if (!user.avatar || user.avatar.includes('dicebear')) {
-          user.avatar = picture;
-        }
-        await user.save();
-      }
+      await user.save();
     }
 
     res.json({
@@ -238,22 +194,11 @@ router.put('/profile', protect, async (req, res) => {
 
   try {
     let updatedUser = null;
-    const userIdStr = req.user._id.toString();
-
-    if (global.isMockDB) {
-      const idx = global.mockDb.users.findIndex(u => u._id.toString() === userIdStr);
-      if (idx !== -1) {
-        if (name) global.mockDb.users[idx].name = name;
-        if (avatar) global.mockDb.users[idx].avatar = avatar;
-        updatedUser = global.mockDb.users[idx];
-      }
-    } else {
-      const user = await User.findById(req.user._id);
-      if (user) {
-        if (name) user.name = name;
-        if (avatar) user.avatar = avatar;
-        updatedUser = await user.save();
-      }
+    const user = await User.findById(req.user._id);
+    if (user) {
+      if (name) user.name = name;
+      if (avatar) user.avatar = avatar;
+      updatedUser = await user.save();
     }
 
     if (!updatedUser) {
@@ -278,12 +223,7 @@ router.put('/profile', protect, async (req, res) => {
 // @access  Private
 router.get('/users/count', protect, async (req, res) => {
   try {
-    let count = 0;
-    if (global.isMockDB) {
-      count = global.mockDb.users.length;
-    } else {
-      count = await User.countDocuments({});
-    }
+    const count = await User.countDocuments({});
     // Return count. Let's make sure it is at least 1 (the current user).
     res.json({ count: count || 1 });
   } catch (error) {

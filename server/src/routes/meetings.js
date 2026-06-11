@@ -27,43 +27,13 @@ router.post('/', protect, async (req, res) => {
 
     const code = generateMeetingCode();
     
-    let meeting = null;
-    if (global.isMockDB) {
-      meeting = {
-        _id: new Date().getTime().toString(),
-        title,
-        code,
-        hostId: req.user._id.toString(),
-        hostName: req.user.name,
-        status: 'active',
-        participants: [],
-        transcript: [],
-        summary: {
-          overview: '',
-          topics: [],
-          decisions: [],
-          tone: 'Neutral'
-        },
-        actionItems: [],
-        sharedFiles: [],
-        sharedNotes: '',
-        chatMessages: [],
-        polls: [],
-        createdAt: new Date()
-      };
-      
-
-
-      global.mockDb.meetings.push(meeting);
-    } else {
-      meeting = await Meeting.create({
-        title,
-        code,
-        hostId: req.user._id.toString(),
-        hostName: req.user.name,
-        status: 'active'
-      });
-    }
+    const meeting = await Meeting.create({
+      title,
+      code,
+      hostId: req.user._id.toString(),
+      hostName: req.user.name,
+      status: 'active'
+    });
 
     res.status(201).json(meeting);
   } catch (error) {
@@ -78,24 +48,14 @@ router.post('/', protect, async (req, res) => {
 router.get('/history', protect, async (req, res) => {
   try {
     const userIdStr = req.user._id.toString();
-    let history = [];
-
-    if (global.isMockDB) {
-      history = global.mockDb.meetings.filter(
-        (m) =>
-          m.status === 'completed' &&
-          (m.hostId === userIdStr || m.participants.some((p) => p.userId === userIdStr))
-      );
-    } else {
-      // Find completed meetings where user is host or participant
-      history = await Meeting.find({
-        status: 'completed',
-        $or: [
-          { hostId: userIdStr },
-          { 'participants.userId': userIdStr }
-        ]
-      }).sort({ createdAt: -1 });
-    }
+    // Find completed meetings where user is host or participant
+    const history = await Meeting.find({
+      status: 'completed',
+      $or: [
+        { hostId: userIdStr },
+        { 'participants.userId': userIdStr }
+      ]
+    }).sort({ createdAt: -1 });
 
     res.json(history);
   } catch (error) {
@@ -111,13 +71,7 @@ router.get('/:code', protect, async (req, res) => {
   const { code } = req.params;
 
   try {
-    let meeting = null;
-
-    if (global.isMockDB) {
-      meeting = global.mockDb.meetings.find((m) => m.code === code);
-    } else {
-      meeting = await Meeting.findOne({ code });
-    }
+    const meeting = await Meeting.findOne({ code });
 
     if (!meeting) {
       return res.status(404).json({ message: 'Meeting room not found' });
@@ -138,21 +92,11 @@ router.put('/:code/notes', protect, async (req, res) => {
   const { notes } = req.body;
 
   try {
-    let meeting = null;
-
-    if (global.isMockDB) {
-      const idx = global.mockDb.meetings.findIndex((m) => m.code === code);
-      if (idx !== -1) {
-        global.mockDb.meetings[idx].sharedNotes = notes;
-        meeting = global.mockDb.meetings[idx];
-      }
-    } else {
-      meeting = await Meeting.findOneAndUpdate(
-        { code },
-        { sharedNotes: notes },
-        { new: true }
-      );
-    }
+    const meeting = await Meeting.findOneAndUpdate(
+      { code },
+      { sharedNotes: notes },
+      { new: true }
+    );
 
     if (!meeting) {
       return res.status(404).json({ message: 'Meeting not found' });

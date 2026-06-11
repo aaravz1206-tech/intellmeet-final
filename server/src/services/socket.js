@@ -16,13 +16,7 @@ export const handleSocketConnections = (io) => {
         if (!token) throw new Error('Authentication token missing');
         
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev_local_secret');
-        let user = null;
-        
-        if (global.isMockDB) {
-          user = global.mockDb.users.find(u => u._id.toString() === decoded.id);
-        } else {
-          user = await User.findById(decoded.id);
-        }
+        const user = await User.findById(decoded.id);
 
         if (!user) throw new Error('Authenticated user not found in database');
 
@@ -51,43 +45,22 @@ export const handleSocketConnections = (io) => {
 
       // Save participant to database/mock store
       try {
-        if (global.isMockDB) {
-          const idx = global.mockDb.meetings.findIndex(m => m.code === meetingCode);
-          if (idx !== -1) {
-            // Check if participant already in list
-            const alreadyExists = global.mockDb.meetings[idx].participants.some(p => p.userId === userId.toString());
-            if (!alreadyExists) {
-              global.mockDb.meetings[idx].participants.push({
-                userId: userId.toString(),
-                name,
-                avatar: participantInfo.avatar,
-                socketId: socket.id,
-                joinTime: new Date()
-              });
-            } else {
-              // Update socketId
-              const pIdx = global.mockDb.meetings[idx].participants.findIndex(p => p.userId === userId.toString());
-              global.mockDb.meetings[idx].participants[pIdx].socketId = socket.id;
-            }
-          }
-        } else {
-          const meeting = await Meeting.findOne({ code: meetingCode });
-          if (meeting) {
-            const alreadyExists = meeting.participants.some(p => p.userId === userId.toString());
-            if (!alreadyExists) {
-              meeting.participants.push({
-                userId: userId.toString(),
-                name,
-                avatar: participantInfo.avatar,
-                socketId: socket.id
-              });
-              await meeting.save();
-            } else {
-              await Meeting.updateOne(
-                { code: meetingCode, 'participants.userId': userId.toString() },
-                { $set: { 'participants.$.socketId': socket.id } }
-              );
-            }
+        const meeting = await Meeting.findOne({ code: meetingCode });
+        if (meeting) {
+          const alreadyExists = meeting.participants.some(p => p.userId === userId.toString());
+          if (!alreadyExists) {
+            meeting.participants.push({
+              userId: userId.toString(),
+              name,
+              avatar: participantInfo.avatar,
+              socketId: socket.id
+            });
+            await meeting.save();
+          } else {
+            await Meeting.updateOne(
+              { code: meetingCode, 'participants.userId': userId.toString() },
+              { $set: { 'participants.$.socketId': socket.id } }
+            );
           }
         }
       } catch (err) {
@@ -170,17 +143,10 @@ export const handleSocketConnections = (io) => {
 
         // Save message to database
         try {
-          if (global.isMockDB) {
-            const idx = global.mockDb.meetings.findIndex(m => m.code === meetingCode);
-            if (idx !== -1) {
-              global.mockDb.meetings[idx].chatMessages.push(chatMsg);
-            }
-          } else {
-            await Meeting.findOneAndUpdate(
-              { code: meetingCode },
-              { $push: { chatMessages: chatMsg } }
-            );
-          }
+          await Meeting.findOneAndUpdate(
+            { code: meetingCode },
+            { $push: { chatMessages: chatMsg } }
+          );
         } catch (err) {
           console.error('Error saving chat message:', err.message);
         }
@@ -199,45 +165,23 @@ export const handleSocketConnections = (io) => {
       try {
         let updatedMsg = null;
         
-        if (global.isMockDB) {
-          const mIdx = global.mockDb.meetings.findIndex(m => m.code === meetingCode);
-          if (mIdx !== -1) {
-            const msgIdx = global.mockDb.meetings[mIdx].chatMessages.findIndex(msg => msg._id === messageId);
-            if (msgIdx !== -1) {
-              const msg = global.mockDb.meetings[mIdx].chatMessages[msgIdx];
-              if (!msg.emojis) msg.emojis = [];
-              
-              const existReaction = msg.emojis.find(r => r.emoji === emoji);
-              if (existReaction) {
-                if (!existReaction.users.includes(userId)) {
-                  existReaction.users.push(userId);
-                  existReaction.count += 1;
-                }
-              } else {
-                msg.emojis.push({ emoji, count: 1, users: [userId] });
+        // Find meeting, locate message, and add reaction
+        const meeting = await Meeting.findOne({ code: meetingCode });
+        if (meeting) {
+          const msg = meeting.chatMessages.id(messageId);
+          if (msg) {
+            if (!msg.emojis) msg.emojis = [];
+            const existReaction = msg.emojis.find(r => r.emoji === emoji);
+            if (existReaction) {
+              if (!existReaction.users.includes(userId)) {
+                existReaction.users.push(userId);
+                existReaction.count += 1;
               }
-              updatedMsg = msg;
+            } else {
+              msg.emojis.push({ emoji, count: 1, users: [userId] });
             }
-          }
-        } else {
-          // Find meeting, locate message, and add reaction
-          const meeting = await Meeting.findOne({ code: meetingCode });
-          if (meeting) {
-            const msg = meeting.chatMessages.id(messageId);
-            if (msg) {
-              if (!msg.emojis) msg.emojis = [];
-              const existReaction = msg.emojis.find(r => r.emoji === emoji);
-              if (existReaction) {
-                if (!existReaction.users.includes(userId)) {
-                  existReaction.users.push(userId);
-                  existReaction.count += 1;
-                }
-              } else {
-                msg.emojis.push({ emoji, count: 1, users: [userId] });
-              }
-              await meeting.save();
-              updatedMsg = msg;
-            }
+            await meeting.save();
+            updatedMsg = msg;
           }
         }
 
@@ -272,17 +216,10 @@ export const handleSocketConnections = (io) => {
 
         // Save speech to DB
         try {
-          if (global.isMockDB) {
-            const idx = global.mockDb.meetings.findIndex(m => m.code === meetingCode);
-            if (idx !== -1) {
-              global.mockDb.meetings[idx].transcript.push(transcriptSegment);
-            }
-          } else {
-            await Meeting.findOneAndUpdate(
-              { code: meetingCode },
-              { $push: { transcript: transcriptSegment } }
-            );
-          }
+          await Meeting.findOneAndUpdate(
+            { code: meetingCode },
+            { $push: { transcript: transcriptSegment } }
+          );
         } catch (err) {
           console.error('Error saving speech segment:', err.message);
         }
@@ -323,20 +260,10 @@ export const handleSocketConnections = (io) => {
       }
 
       try {
-        if (global.isMockDB) {
-          const idx = global.mockDb.meetings.findIndex(m => m.code === meetingCode);
-          if (idx !== -1) {
-            if (!global.mockDb.meetings[idx].polls) {
-              global.mockDb.meetings[idx].polls = [];
-            }
-            global.mockDb.meetings[idx].polls.push(newPoll);
-          }
-        } else {
-          await Meeting.findOneAndUpdate(
-            { code: meetingCode },
-            { $push: { polls: newPoll } }
-          );
-        }
+        await Meeting.findOneAndUpdate(
+          { code: meetingCode },
+          { $push: { polls: newPoll } }
+        );
       } catch (err) {
         console.error('Error saving new poll:', err.message);
       }
@@ -352,35 +279,18 @@ export const handleSocketConnections = (io) => {
       let updatedPoll = null;
 
       try {
-        if (global.isMockDB) {
-          const mIdx = global.mockDb.meetings.findIndex(m => m.code === meetingCode);
-          if (mIdx !== -1) {
-            const pIdx = global.mockDb.meetings[mIdx].polls.findIndex(p => p.id === pollId);
-            if (pIdx !== -1) {
-              const poll = global.mockDb.meetings[mIdx].polls[pIdx];
-              poll.options.forEach(opt => {
-                opt.votes = opt.votes.filter(v => v !== userId);
-              });
-              if (poll.options[optionIndex]) {
-                poll.options[optionIndex].votes.push(userId);
-              }
-              updatedPoll = poll;
+        const meeting = await Meeting.findOne({ code: meetingCode });
+        if (meeting) {
+          const poll = meeting.polls.find(p => p.id === pollId);
+          if (poll) {
+            poll.options.forEach(opt => {
+              opt.votes = opt.votes.filter(v => v !== userId);
+            });
+            if (poll.options[optionIndex]) {
+              poll.options[optionIndex].votes.push(userId);
             }
-          }
-        } else {
-          const meeting = await Meeting.findOne({ code: meetingCode });
-          if (meeting) {
-            const poll = meeting.polls.find(p => p.id === pollId);
-            if (poll) {
-              poll.options.forEach(opt => {
-                opt.votes = opt.votes.filter(v => v !== userId);
-              });
-              if (poll.options[optionIndex]) {
-                poll.options[optionIndex].votes.push(userId);
-              }
-              await meeting.save();
-              updatedPoll = poll;
-            }
+            await meeting.save();
+            updatedPoll = poll;
           }
         }
       } catch (err) {
@@ -421,19 +331,10 @@ export const handleSocketConnections = (io) => {
       
       // Update database/mock store to remove socket reference
       try {
-        if (global.isMockDB) {
-          const idx = global.mockDb.meetings.findIndex(m => m.code === meetingCode);
-          if (idx !== -1) {
-            global.mockDb.meetings[idx].participants = global.mockDb.meetings[idx].participants.filter(
-              p => p.socketId !== socket.id
-            );
-          }
-        } else {
-          await Meeting.findOneAndUpdate(
-            { code: meetingCode },
-            { $pull: { participants: { socketId: socket.id } } }
-          );
-        }
+        await Meeting.findOneAndUpdate(
+          { code: meetingCode },
+          { $pull: { participants: { socketId: socket.id } } }
+        );
       } catch (err) {
         console.error('Error removing participant from DB:', err.message);
       }

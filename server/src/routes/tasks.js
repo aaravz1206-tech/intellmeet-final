@@ -13,13 +13,7 @@ import Task from '../models/Task.js';
 // @access  Private
 router.get('/', protect, async (req, res) => {
   try {
-    let tasks = [];
-
-    if (global.isMockDB) {
-      tasks = global.mockDb.tasks;
-    } else {
-      tasks = await Task.find({}).sort({ createdAt: -1 });
-    }
+    let tasks = await Task.find({}).sort({ createdAt: -1 });
 
     res.json(tasks);
   } catch (error) {
@@ -39,34 +33,16 @@ router.post('/', protect, async (req, res) => {
       return res.status(400).json({ message: 'Task title is required' });
     }
 
-    let newTask = null;
-
-    if (global.isMockDB) {
-      newTask = {
-        _id: new Date().getTime().toString(),
-        title,
-        description: description || '',
-        assignedTo: assignedTo || 'Unassigned',
-        meetingId: meetingId || '',
-        status: status || 'todo',
-        priority: priority || 'medium',
-        dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 3600000 * 24 * 7),
-        creator: req.user.name,
-        createdAt: new Date()
-      };
-      global.mockDb.tasks.push(newTask);
-    } else {
-      newTask = await Task.create({
-        title,
-        description: description || '',
-        assignedTo: assignedTo || 'Unassigned',
-        meetingId: meetingId || '',
-        status: status || 'todo',
-        priority: priority || 'medium',
-        dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 3600000 * 24 * 7),
-        creator: req.user.name
-      });
-    }
+    const newTask = await Task.create({
+      title,
+      description: description || '',
+      assignedTo: assignedTo || 'Unassigned',
+      meetingId: meetingId || '',
+      status: status || 'todo',
+      priority: priority || 'medium',
+      dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 3600000 * 24 * 7),
+      creator: req.user.name
+    });
 
     res.status(201).json(newTask);
   } catch (error) {
@@ -83,27 +59,12 @@ router.put('/:id', protect, async (req, res) => {
   const { title, description, assignedTo, status, priority, dueDate } = req.body;
 
   try {
-    let updatedTask = null;
-
-    if (global.isMockDB) {
-      const idx = global.mockDb.tasks.findIndex((t) => t._id.toString() === id && t.creator === req.user.name);
-      if (idx !== -1) {
-        if (title !== undefined) global.mockDb.tasks[idx].title = title;
-        if (description !== undefined) global.mockDb.tasks[idx].description = description;
-        if (assignedTo !== undefined) global.mockDb.tasks[idx].assignedTo = assignedTo;
-        if (status !== undefined) global.mockDb.tasks[idx].status = status;
-        if (priority !== undefined) global.mockDb.tasks[idx].priority = priority;
-        if (dueDate !== undefined) global.mockDb.tasks[idx].dueDate = new Date(dueDate);
-        updatedTask = global.mockDb.tasks[idx];
-      }
-    } else {
-      // Prevent IDOR: Only creator can update
-      updatedTask = await Task.findOneAndUpdate(
-        { _id: id, creator: req.user.name },
-        { title, description, assignedTo, status, priority, dueDate },
-        { new: true }
-      );
-    }
+    // Prevent IDOR: Only creator can update
+    const updatedTask = await Task.findOneAndUpdate(
+      { _id: id, creator: req.user.name },
+      { title, description, assignedTo, status, priority, dueDate },
+      { new: true }
+    );
 
     if (!updatedTask) {
       return res.status(404).json({ message: 'Task not found' });
@@ -123,17 +84,9 @@ router.delete('/:id', protect, async (req, res) => {
   const { id } = req.params;
 
   try {
-    let success = false;
-
-    if (global.isMockDB) {
-      const initialLength = global.mockDb.tasks.length;
-      global.mockDb.tasks = global.mockDb.tasks.filter((t) => !(t._id.toString() === id && t.creator === req.user.name));
-      success = global.mockDb.tasks.length < initialLength;
-    } else {
-      // Prevent IDOR: Only creator can delete
-      const result = await Task.findOneAndDelete({ _id: id, creator: req.user.name });
-      success = !!result;
-    }
+    // Prevent IDOR: Only creator can delete
+    const result = await Task.findOneAndDelete({ _id: id, creator: req.user.name });
+    const success = !!result;
 
     if (!success) {
       return res.status(404).json({ message: 'Task not found' });

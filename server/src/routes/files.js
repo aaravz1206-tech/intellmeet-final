@@ -67,43 +67,21 @@ router.post('/upload', protect, upload.single('file'), async (req, res) => {
       uploadedAt: new Date()
     };
 
-    let meeting = null;
-    if (global.isMockDB) {
-      const idx = global.mockDb.meetings.findIndex((m) => m.code === meetingCode);
-      if (idx !== -1) {
-        global.mockDb.meetings[idx].sharedFiles.push(sharedFile);
-        
-        // Also push a chat notice
-        global.mockDb.meetings[idx].chatMessages.push({
-          senderId: req.user._id.toString(),
-          senderName: req.user.name,
-          senderAvatar: req.user.avatar,
-          text: `Uploaded a file: ${sharedFile.name}`,
-          fileUrl: sharedFile.url,
-          fileName: sharedFile.name,
-          fileSize: sharedFile.size,
-          timestamp: new Date()
-        });
+    const meeting = await Meeting.findOne({ code: meetingCode });
+    if (meeting) {
+      meeting.sharedFiles.push(sharedFile);
+      
+      meeting.chatMessages.push({
+        senderId: req.user._id.toString(),
+        senderName: req.user.name,
+        senderAvatar: req.user.avatar,
+        text: `Uploaded a file: ${sharedFile.name}`,
+        fileUrl: sharedFile.url,
+        fileName: sharedFile.name,
+        fileSize: sharedFile.size
+      });
 
-        meeting = global.mockDb.meetings[idx];
-      }
-    } else {
-      meeting = await Meeting.findOne({ code: meetingCode });
-      if (meeting) {
-        meeting.sharedFiles.push(sharedFile);
-        
-        meeting.chatMessages.push({
-          senderId: req.user._id.toString(),
-          senderName: req.user.name,
-          senderAvatar: req.user.avatar,
-          text: `Uploaded a file: ${sharedFile.name}`,
-          fileUrl: sharedFile.url,
-          fileName: sharedFile.name,
-          fileSize: sharedFile.size
-        });
-
-        await meeting.save();
-      }
+      await meeting.save();
     }
 
     if (!meeting) {
