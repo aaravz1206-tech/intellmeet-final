@@ -11,17 +11,28 @@ export const connectDB = async () => {
     console.log('Connecting to MongoDB at:', mongoUri);
     
     await mongoose.connect(mongoUri, {
-      serverSelectionTimeoutMS: 5000
+      serverSelectionTimeoutMS: 2000
     });
     
     console.log('======================================================');
     console.log('🟢 MongoDB Connected Successfully 🟢');
     console.log('======================================================');
   } catch (error) {
-    console.error('======================================================');
-    console.error('⚠️  MongoDB Connection Failed: ', error.message);
-    console.error('FATAL: Application requires MongoDB to run. Exiting.');
-    console.error('======================================================');
-    process.exit(1);
+    console.log('⚠️ Local MongoDB Connection Failed. Falling back to Memory Server...');
+    try {
+      const { MongoMemoryServer } = await import('mongodb-memory-server');
+      const mongoServer = await MongoMemoryServer.create();
+      const memUri = mongoServer.getUri();
+      await mongoose.connect(memUri);
+      console.log('======================================================');
+      console.log('🟢 MongoDB Memory Server Connected Successfully 🟢');
+      console.log('======================================================');
+    } catch (fallbackErr) {
+      console.error('======================================================');
+      console.error('⚠️  Memory Server Connection Failed: ', fallbackErr.message);
+      console.error('FATAL: Application requires MongoDB to run. Exiting.');
+      console.error('======================================================');
+      process.exit(1);
+    }
   }
 };

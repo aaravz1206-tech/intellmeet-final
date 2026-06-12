@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth, API_URL } from '../../context/AuthContext';
 import { useMeeting } from '../../context/MeetingContext';
 import { 
   Video, Calendar, CheckSquare, Clock, PlusCircle, 
-  ArrowRight, Search, FileText, History, Settings, 
-  LogOut, Award, User, Download, Plus, Trash2, ArrowLeftRight,
+  ArrowRight, Search, FileText, 
+  LogOut, User, Download, Plus, Trash2, ArrowLeftRight,
   Users, UserPlus, UserCheck, UserX, Contact
 } from 'lucide-react';
 
@@ -53,7 +53,6 @@ export const Dashboard = () => {
     }
   };
   const [newTaskPriority, setNewTaskPriority] = useState('medium');
-  const [taskLoading, setTaskLoading] = useState(false);
 
   // Profile Edit States
   const [editName, setEditName] = useState(user?.name || '');
@@ -90,6 +89,7 @@ export const Dashboard = () => {
       if (roomToJoin) {
         // Remove param from URL to prevent loop
         window.history.replaceState({}, '', window.location.pathname);
+         
         setRoomCodeInput(roomToJoin);
         
         const autoJoin = async () => {
@@ -106,9 +106,10 @@ export const Dashboard = () => {
         autoJoin();
       }
     }
+     
   }, [user, activeTab]);
 
-  const fetchUsersCount = async () => {
+  async function fetchUsersCount() {
     if (!user) return;
     try {
       const res = await fetch(`${API_URL}/auth/users/count`, {
@@ -123,7 +124,7 @@ export const Dashboard = () => {
     }
   };
 
-  const fetchFriendsData = async () => {
+  async function fetchFriendsData() {
     if (!user) return;
     try {
       const [friendsRes, requestsRes] = await Promise.all([
@@ -195,7 +196,7 @@ export const Dashboard = () => {
     }
   };
 
-  const fetchHistory = async () => {
+  async function fetchHistory() {
     if (!user) return;
     setHistoryLoading(true);
     try {
@@ -213,7 +214,7 @@ export const Dashboard = () => {
     }
   };
 
-  const fetchTasks = async () => {
+  async function fetchTasks() {
     if (!user) return;
     try {
       const res = await fetch(`${API_URL}/tasks`, {
@@ -707,6 +708,7 @@ export const Dashboard = () => {
                           setFormError(`Failed to send invitation to ${email}.`);
                         }
                       } catch (err) {
+                        console.error(err);
                         setFormError(`Network error while sending invitation.`);
                       }
                       

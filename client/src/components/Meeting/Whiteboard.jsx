@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { useSocket } from '../../context/SocketContext';
 import { useMeeting } from '../../context/MeetingContext';
 import { Trash2, Edit2, Eraser, Download } from 'lucide-react';

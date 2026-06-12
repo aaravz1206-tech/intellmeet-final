@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Video, ShieldAlert, Lock, Mail, User, Loader, X } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';

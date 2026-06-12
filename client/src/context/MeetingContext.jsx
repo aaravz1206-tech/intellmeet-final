@@ -323,7 +323,7 @@ export const MeetingProvider = ({ children }) => {
   }, [socket, meetingCode]);
 
   // 3. WebRTC INTERNALS
-  const createPeerConnection = (peerSocketId) => {
+  function createPeerConnection(peerSocketId) {
     if (peerConnections.current[peerSocketId]) {
       return peerConnections.current[peerSocketId];
     }
@@ -362,7 +362,7 @@ export const MeetingProvider = ({ children }) => {
     return pc;
   };
 
-  const initiateCall = async (peerSocketId) => {
+  async function initiateCall(peerSocketId) {
     const pc = createPeerConnection(peerSocketId);
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
