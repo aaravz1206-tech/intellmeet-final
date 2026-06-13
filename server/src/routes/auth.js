@@ -38,10 +38,10 @@ router.post('/register', async (req, res) => {
     const { valid, reason, validators } = await validateEmail({
       email: cleanEmail,
       validateRegex: true,
-      validateMx: true,
+      validateMx: false, // Disabled due to Render blocking outbound SMTP/DNS
       validateTypo: true,
       validateDisposable: true,
-      validateSMTP: true,
+      validateSMTP: false, // Disabled due to Render blocking outbound SMTP
     });
     if (!valid) {
       return res.status(400).json({ message: `Invalid email address. Reason: ${validators[reason]?.reason || reason}` });
