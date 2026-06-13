@@ -28,8 +28,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Standard Middlewares
+// Allow permissive CORS in development for local/testing convenience.
+const corsOrigin = process.env.NODE_ENV === 'production'
+  ? (process.env.CLIENT_URL || 'http://localhost:5173')
+  : (process.env.CLIENT_URL || '*');
+
+console.log('CORS origin:', corsOrigin);
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: corsOrigin,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true
 }));

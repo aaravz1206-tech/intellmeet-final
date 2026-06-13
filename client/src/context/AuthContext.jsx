@@ -2,9 +2,9 @@ import React, { createContext, useState, useEffect, useContext } from 'react';
 
 const AuthContext = createContext();
 
-export const API_URL = import.meta.env.DEV 
-  ? `http://${window.location.hostname}:5000/api` 
-  : `${window.location.origin}/api`;
+// Allow explicit override via VITE_API_URL for cross-machine dev setups (e.g., Mac)
+export const API_URL = import.meta.env.VITE_API_URL
+  || (import.meta.env.DEV ? `http://${window.location.hostname}:5000/api` : `${window.location.origin}/api`);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -140,6 +140,33 @@ export const AuthProvider = ({ children }) => {
       
       if (!res.ok) {
         throw new Error(data.message || 'Google OAuth2 login failed');
+      }
+
+      localStorage.setItem('intellmeet_user', JSON.stringify(data));
+      setUser(data);
+      return data;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // SSO fallback for manual provider prompts (email + name)
+  const loginWithSSO = async (email, name, provider) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_URL}/auth/sso`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, name, provider })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || 'SSO login failed');
       }
 
       localStorage.setItem('intellmeet_user', JSON.stringify(data));

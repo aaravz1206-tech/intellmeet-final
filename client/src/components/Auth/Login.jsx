@@ -4,7 +4,7 @@ import { Video, ShieldAlert, Lock, Mail, Loader, X, User } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
 
 export const Login = ({ onNavigate }) => {
-  const { login, error, clearError, loginWithGoogle } = useAuth();
+  const { login, error, clearError, loginWithGoogle, loginWithSSO } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -74,9 +74,9 @@ export const Login = ({ onNavigate }) => {
     
     setTimeout(async () => {
       try {
-        await loginWithGoogle(ssoEmail, ssoName || `${ssoProvider} User`);
+        await loginWithSSO(ssoEmail, ssoName || `${ssoProvider} User`, ssoProvider);
       } catch (err) {
-        setValidationErr(err.message || `${ssoProvider} OAuth2 login failed.`);
+        setValidationErr(err.message || `${ssoProvider} SSO login failed.`);
         setOauthLoading(false);
       }
     }, 1200);
